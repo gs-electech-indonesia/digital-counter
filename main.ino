@@ -13,9 +13,6 @@
 #include <ArduinoJson.h>
 #include <Preferences.h>
 
-// ====== SESUAIKAN ======
-// const char* WIFI_SSID  = "";
-// const char* WIFI_PASS  = "";
 const char* WIFI_SSID  = "";
 const char* WIFI_PASS  = "";
 const char* SERVER_URL = "";
@@ -43,19 +40,23 @@ volatile bool siapHitung = true;
 
 void IRAM_ATTR onPulse() {
   uint32_t now = micros();
-  if (!siapHitung || (now - lastPulseUs <= DEBOUNCE_US)) {
-    lastPulseUs = now;
-    return;
+  
+  // Jika pulsa masuk terlalu cepat dari hitungan SAH terakhir, abaikan (Filter bounce)
+  if (now - lastPulseUs < DEBOUNCE_US) {
+    return; 
   }
+  
+  // Cek apakah pin benar-benar berada di kondisi terpicu
   bool dipencet = SWITCH_NC ? (digitalRead(PIN_PULSE) == HIGH) : (digitalRead(PIN_PULSE) == LOW);
+  
   if (dipencet) {
     portENTER_CRITICAL_ISR(&mux);
     count++;
     portEXIT_CRITICAL_ISR(&mux);
-    siapHitung = false;
+    lastPulseUs = now; // Perbarui timestamp HANYA ketika hitungan berhasil dianggap SAH
   }
-  lastPulseUs = now;
 }
+
 
 uint32_t getCount() {
   portENTER_CRITICAL(&mux);
@@ -141,10 +142,7 @@ void setup() {
 }
 
 void loop() {
-  // Output ON selama hitungan >= preset (preset 0 = output mati)
-  bool sudahLepas = SWITCH_NC ? (digitalRead(PIN_PULSE) == LOW) : (digitalRead(PIN_PULSE) == HIGH);
-  if (sudahLepas) siapHitung = true;
-
+  // Pertahankan logika output preset dan sisa kode di bawahnya
   bool out = (preset > 0 && getCount() >= preset);
   digitalWrite(PIN_OUT, out ? HIGH : LOW);
 
@@ -153,7 +151,7 @@ void loop() {
     connectWifi();
     postData();
   }
-  if (millis() - lastSave >= 5000) {   // simpan ke flash hanya bila berubah
+  if (millis() - lastSave >= 5000) {   
     lastSave = millis();
     uint32_t c = getCount();
     if (c != savedCount)   { prefs.putUInt("count", c);    savedCount = c; }
@@ -161,3 +159,4 @@ void loop() {
   }
   delay(5);
 }
+
